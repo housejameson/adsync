@@ -52,7 +52,8 @@ async function scrapeInventory() {
   const label = document.getElementById('scrapeLabel');
   btn.disabled    = true;
   label.innerHTML = '<span class="spinner"></span> Scanning...';
-  log('scrapeLog', `Fetching inventory from: ${url}`);
+  log('scrapeLog', `Fetching page via CORS proxy: ${url}`);
+  log('scrapeLog', 'Stripping HTML and sending to Gemini...');
 
   try {
     inventoryModels = await fetchInventoryFromUrl(url);

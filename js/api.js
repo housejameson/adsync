@@ -1,8 +1,14 @@
 /**
- * api.js — All AI calls, now powered by Google Gemini (free tier)
+ * api.js — All AI calls, powered by Google Gemini (free tier)
  *
- * Model : gemini-2.0-flash   (free via Google AI Studio)
+ * Model : gemini-2.0-flash  (free via Google AI Studio)
  * Docs  : https://ai.google.dev/api/generate-content
+ *
+ * How inventory scraping works (no grounding tool required):
+ *   1. Browser fetches the dealership page via allorigins.win (free CORS proxy)
+ *   2. Raw HTML is stripped down to plain text
+ *   3. Plain text is sent to Gemini to extract vehicle makes/models
+ *   This keeps everything on the free tier.
  *
  * Public API (called by app.js):
  *   setApiKey(key)              — store key entered by user at runtime
@@ -13,6 +19,7 @@
 
 const GEMINI_MODEL = 'gemini-2.0-flash';
 const GEMINI_BASE  = 'https://generativelanguage.googleapis.com/v1beta/models';
+const CORS_PROXY   = 'https://api.allorigins.win/get?url=';
 
 let _apiKey = '';
 
@@ -29,13 +36,22 @@ function hasApiKey() {
 /* ── Public: inventory scrape ──────────────────────────────────────────── */
 
 /**
- * Ask Gemini to fetch and parse vehicle inventory from a dealership URL.
- * Uses Gemini's Google Search grounding tool for live page access (free).
+ * Fetch the dealership page via CORS proxy, strip to plain text,
+ * then ask Gemini to extract all vehicle makes/models/years.
  */
 async function fetchInventoryFromUrl(url) {
-  const prompt = `You are a web scraping assistant. Analyze the dealership inventory page at: ${url}
+  // Step 1: fetch page HTML through CORS proxy
+  const pageText = await _fetchPageText(url);
 
-Fetch and analyze the page content, then extract ALL vehicle makes and models listed.
+  // Step 2: send plain text to Gemini for extraction
+  const prompt = `You are a vehicle inventory extraction assistant. Below is the plain text content scraped from a car dealership's inventory page.
+
+Extract every unique vehicle listed. For each vehicle return its make, model, and year.
+
+Page content:
+---
+${pageText.slice(0, 12000)}
+---
 
 Return ONLY a JSON array — no markdown fences, no explanation:
 [
@@ -43,9 +59,9 @@ Return ONLY a JSON array — no markdown fences, no explanation:
   {"make": "Honda",  "model": "CR-V",  "year": "2023"}
 ]
 
-If you cannot access the URL, infer typical inventory for that dealership's franchise from the domain name. Include 8-15 vehicles. Return ONLY the JSON array.`;
+Deduplicate by make+model (keep the most recent year if duplicates exist). Return ONLY the JSON array.`;
 
-  const text = await _callGemini(prompt, /*useSearch=*/true);
+  const text = await _callGemini(prompt);
   return _parseJSONArray(text);
 }
 
@@ -88,19 +104,57 @@ Return ONLY this JSON — no markdown fences, no explanation:
 
 For each missing vehicle, apply the template (replace [Make] and [Model]) and generate 5 relevant search keywords. Return ONLY the JSON.`;
 
-  const text = await _callGemini(prompt, /*useSearch=*/false);
+  const text = await _callGemini(prompt);
   return _parseJSONObject(text);
+}
+
+/* ── Private: CORS proxy page fetch ───────────────────────────────────── */
+
+/**
+ * Fetch a URL via allorigins.win and return stripped plain text.
+ * allorigins.win is a free, open CORS proxy that works from any browser.
+ */
+async function _fetchPageText(url) {
+  const proxyUrl = CORS_PROXY + encodeURIComponent(url);
+
+  const res = await fetch(proxyUrl);
+  if (!res.ok) throw new Error(`Could not fetch page (${res.status}). Check the URL and try again.`);
+
+  const data = await res.json();
+  const html = data?.contents;
+  if (!html) throw new Error('CORS proxy returned empty content. The site may be blocking external access.');
+
+  return _stripHtml(html);
+}
+
+/**
+ * Strip HTML tags, scripts, styles, and collapse whitespace to plain text.
+ * Keeps enough content for Gemini to identify vehicle listings.
+ */
+function _stripHtml(html) {
+  // Remove script and style blocks entirely
+  let text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')           // strip remaining tags
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#\d+;/g, ' ')
+    .replace(/\s{2,}/g, ' ')            // collapse whitespace
+    .trim();
+
+  return text;
 }
 
 /* ── Private: Gemini REST call ─────────────────────────────────────────── */
 
 /**
- * POST to the Gemini generateContent endpoint.
- * @param {string}  prompt     - User message
- * @param {boolean} useSearch  - Enable Google Search grounding (free, live web access)
- * @returns {string} Raw text from the model
+ * POST a prompt to the Gemini generateContent endpoint.
+ * No tools used — stays on free tier.
  */
-async function _callGemini(prompt, useSearch = false) {
+async function _callGemini(prompt) {
   if (!_apiKey) throw new Error('No Gemini API key set. Please enter your key above.');
 
   const endpoint = `${GEMINI_BASE}/${GEMINI_MODEL}:generateContent?key=${_apiKey}`;
@@ -109,11 +163,6 @@ async function _callGemini(prompt, useSearch = false) {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: { maxOutputTokens: 2048, temperature: 0.1 }
   };
-
-  // Google Search grounding — lets Gemini fetch live web content at no extra cost
-  if (useSearch) {
-    body.tools = [{ google_search: {} }];
-  }
 
   const res = await fetch(endpoint, {
     method:  'POST',
@@ -140,16 +189,15 @@ function _extractText(geminiResponse) {
 }
 
 function _parseJSONArray(text) {
-  // Strip markdown fences if Gemini adds them despite instructions
   const clean = text.replace(/```(?:json)?/gi, '').trim();
   const match = clean.match(/\[[\s\S]*\]/);
-  if (!match) throw new Error('Could not parse JSON array from Gemini response. Raw: ' + text.slice(0, 200));
+  if (!match) throw new Error('Could not parse vehicle list from Gemini. Raw: ' + text.slice(0, 200));
   return JSON.parse(match[0]);
 }
 
 function _parseJSONObject(text) {
   const clean = text.replace(/```(?:json)?/gi, '').trim();
   const match = clean.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Could not parse JSON object from Gemini response. Raw: ' + text.slice(0, 200));
+  if (!match) throw new Error('Could not parse analysis from Gemini. Raw: ' + text.slice(0, 200));
   return JSON.parse(match[0]);
 }
