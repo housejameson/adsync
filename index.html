@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AdSync — Dealership Inventory × Google Ads</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="badge">Powered by Gemini</div>
+    <h1>Ad<span>Sync</span></h1>
+    <p class="subtitle">Cross-reference your dealership's live inventory against Google Ads Ad Groups — and auto-generate new ones for every missing model.</p>
+  </header>
+
+  <div class="steps">
+
+    <!-- STEP 0: API Key -->
+    <div class="step active" id="step0">
+      <div class="step-header">
+        <div class="step-num">0</div>
+        <div>
+          <div class="step-title">Gemini API Key</div>
+          <div class="step-desc">Free at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--accent)">aistudio.google.com/apikey</a> — stored in memory only, never sent anywhere except Google</div>
+        </div>
+      </div>
+      <div class="step-body">
+        <div class="input-row">
+          <input type="password" id="apiKeyInput" placeholder="AIza..." autocomplete="off" />
+          <button class="btn" onclick="saveApiKey()">Save Key</button>
+        </div>
+        <div id="keyStatus" style="font-size:12px;margin-top:10px;color:var(--muted)"></div>
+      </div>
+    </div>
+
+    <!-- STEP 1: URL -->
+    <div class="step" id="step1">
+      <div class="step-header">
+        <div class="step-num">1</div>
+        <div>
+          <div class="step-title">Dealership Inventory URL</div>
+          <div class="step-desc">Paste the URL of the inventory/search page we'll scan</div>
+        </div>
+      </div>
+      <div class="step-body">
+        <div class="input-row">
+          <input type="text" id="siteUrl" placeholder="https://www.dealership.com/inventory" />
+          <button class="btn" onclick="scrapeInventory()">
+            <span id="scrapeLabel">Scan Inventory</span>
+          </button>
+        </div>
+        <div class="log" id="scrapeLog" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- STEP 2: CSV Upload -->
+    <div class="step" id="step2">
+      <div class="step-header">
+        <div class="step-num">2</div>
+        <div>
+          <div class="step-title">Upload Google Ads Editor CSV</div>
+          <div class="step-desc">Export Ad Groups from Google Ads Editor → File → Export → Spreadsheet (CSV)</div>
+        </div>
+      </div>
+      <div class="step-body">
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="csvFile" accept=".csv,.xlsx,.tsv" onchange="handleFile(this.files[0])">
+          <div class="drop-icon">📋</div>
+          <div class="drop-label">Drop your <strong>Google Ads Editor CSV</strong> here</div>
+          <div class="drop-sub">or click to browse · .csv files supported</div>
+        </div>
+        <div class="log" id="csvLog" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- STEP 3: Campaign Settings -->
+    <div class="step" id="step3">
+      <div class="step-header">
+        <div class="step-num">3</div>
+        <div>
+          <div class="step-title">Campaign Settings</div>
+          <div class="step-desc">Configure the campaign and Ad Group template for new entries</div>
+        </div>
+      </div>
+      <div class="step-body">
+        <div class="form-row">
+          <label>Campaign Name (must match existing campaign)</label>
+          <input type="text" id="campaignName" placeholder="e.g. Dealership - New Cars" />
+        </div>
+        <div class="form-row">
+          <label>Ad Group Name Template</label>
+          <input type="text" id="adGroupTemplate" value="[Make] [Model] - New Cars" placeholder="[Make] [Model] - New Cars" />
+        </div>
+        <div class="form-row">
+          <label>Max CPC ($)</label>
+          <input type="text" id="maxCpc" value="2.00" placeholder="2.00" />
+        </div>
+        <div class="gap-row">
+          <button class="btn" onclick="crossReference()">
+            <span id="analyzeLabel">✦ Cross-Reference & Generate</span>
+          </button>
+        </div>
+        <div class="log" id="analysisLog" style="display:none"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Results -->
+  <div class="results-panel" id="resultsPanel">
+    <div class="results-header">
+      <div class="results-title">Analysis Results</div>
+    </div>
+
+    <div class="stats-row" id="statsRow"></div>
+
+    <div class="section-label">Missing from Google Ads — New Ad Groups to Create</div>
+    <div class="model-grid" id="newModelsGrid"></div>
+
+    <div class="section-label">Already have Ad Groups</div>
+    <div class="model-grid" id="existingModelsGrid"></div>
+
+    <div class="section-label">Generated Ad Groups Preview</div>
+    <div style="overflow-x:auto">
+      <table class="preview-table" id="previewTable">
+        <thead>
+          <tr>
+            <th>Campaign</th>
+            <th>Ad Group</th>
+            <th>Max CPC</th>
+            <th>Keywords (sample)</th>
+          </tr>
+        </thead>
+        <tbody id="previewBody"></tbody>
+      </table>
+    </div>
+
+    <div class="gap-row mt-16">
+      <button class="btn" onclick="downloadCSV()">⬇ Download Import CSV</button>
+      <button class="btn btn-secondary" onclick="reset()">Start Over</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modules loaded in dependency order -->
+<script src="js/api.js"></script>
+<script src="js/csv.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
